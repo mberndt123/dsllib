@@ -1,7 +1,9 @@
-import cats.{Applicative, Id}
+package dsllib
+
 import cats.evidence.Is
-import polymorphic.Exists
 import cats.implicits._
+import cats.{Applicative, Id}
+import polymorphic.Exists
 
 import scala.language._
 
@@ -22,14 +24,6 @@ case class Apply(fun: Expr, arg: Expr) extends Expr
 case class TypedValue[F[_], A](value: F[A], tpe: Type[A])
 
 object Main {
-  type ETypedValue[F[_]] = Exists[TypedValue[F, *]]
-  object ETypedValue {
-    class ETypedValuePartiallyApplied[F[_]] {
-      def apply[A](fa: F[A])(implicit tpe: Type[A]): ETypedValue[F] = Exists(TypedValue(fa, tpe))
-    }
-
-    def apply[F[_]]: ETypedValuePartiallyApplied[F] = new ETypedValuePartiallyApplied[F]
-  }
 
   def typecheck[A, B](typea: Type[A], typeb: Type[B]): Option[Is[A, B]] = {
     (typea, typeb) match {
