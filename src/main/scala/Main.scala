@@ -9,6 +9,11 @@ sealed trait Type[A]
 case object DoubleType extends Type[Double]
 case class FunctionType[T, R](argType: Type[T], retType: Type[R]) extends Type[T => R]
 
+object Type {
+  implicit val doubleType: Type[Double] = DoubleType
+  implicit def functionType[T, R](implicit t: Type[T], r: Type[R]): Type[T => R] = FunctionType(t, r)
+}
+
 sealed trait Expr
 case class Var(name: String) extends Expr
 case class DoubleLit(value: Double) extends Expr
@@ -18,6 +23,13 @@ case class TypedValue[F[_], A](value: F[A], tpe: Type[A])
 
 object Main {
   type ETypedValue[F[_]] = Exists[TypedValue[F, *]]
+  object ETypedValue {
+    class ETypedValuePartiallyApplied[F[_]] {
+      def apply[A](fa: F[A])(implicit tpe: Type[A]): ETypedValue[F] = Exists(TypedValue(fa, tpe))
+    }
+
+    def apply[F[_]]: ETypedValuePartiallyApplied[F] = new ETypedValuePartiallyApplied[F]
+  }
 
   def typecheck[A, B](typea: Type[A], typeb: Type[B]): Option[Is[A, B]] = {
     (typea, typeb) match {
@@ -61,21 +73,25 @@ object Main {
       } yield compiledApply
   }
 
-  def typecheck[F[_], A](typedValue: ETypedValue[F], atpe: Type[A]): Option[F[A]] = {
-    val TypedValue(value, etpe) = Exists.unwrap(typedValue)
-    typecheck(etpe, atpe).map(is => is.substitute(value))
+  class retrievePartiallyApplied[A] {
+    def apply[F[_]](typedValue: ETypedValue[F])(implicit atpe: Type[A]): Option[F[A]] = {
+      val TypedValue(value, etpe) = Exists.unwrap(typedValue)
+      typecheck(etpe, atpe).map(_.substitute(value))
+    }
   }
+
+  def retrieve[A]: retrievePartiallyApplied[A] = new retrievePartiallyApplied[A]
 
   def main(args: Array[String]): Unit = {
     val expr = Apply(Apply(Var("*"), Apply(Apply(Var("+"), DoubleLit(3)), DoubleLit(5))), DoubleLit(7))
     val vars = Map(
-      "+" -> Exists(TypedValue[Id, Double => Double => Double](a => b => a + b, FunctionType(DoubleType, FunctionType(DoubleType, DoubleType)))),
-      "*" -> Exists(TypedValue[Id, Double => Double => Double](a => b => a * b, FunctionType(DoubleType, FunctionType(DoubleType, DoubleType))))
+      "+" -> ETypedValue[Id]((a: Double) => (b: Double) => a + b),
+      "*" -> ETypedValue[Id]((a: Double) => (b: Double) => a * b)
     )
 
     (for {
-      compiledExpr <- compile[Id](expr, vars)
-      typed <- typecheck(compiledExpr, DoubleType)
+      compiledExpr <- compile(expr, vars)
+      typed <- retrieve[Double](compiledExpr)
     } yield {
       println(typed)
     }).getOrElse {
